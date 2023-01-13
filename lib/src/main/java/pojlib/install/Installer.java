@@ -203,18 +203,21 @@ public class Installer {
      * @return The path of the LWJGL jar or a failed future
      */
     public static CompletableFuture<String> installLwjgl(Activity activity) {
-        return (CompletableFuture<String>) threadPool.submit(() -> {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        threadPool.submit(() -> {
             File lwjgl = new File(Constants.USER_HOME + "/lwjgl3/lwjgl-glfw-classes-3.2.3.jar");
             if (!lwjgl.exists()) {
                 lwjgl.getParentFile().mkdirs();
                 try {
                     FileUtil.write(lwjgl.getAbsolutePath(), FileUtil.loadFromAssetToByte(activity, "lwjgl/lwjgl-glfw-classes-3.2.3.jar"));
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    future.completeExceptionally(new RuntimeException(e));
                 }
             }
-            return lwjgl.getAbsolutePath();
+            future.complete(lwjgl.getAbsolutePath());
+            return null;
         });
+        return future;
     }
 
     //Used for mod libraries, vanilla is handled a different (tbh better) way
