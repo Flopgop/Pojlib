@@ -6,7 +6,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import pojlib.UnityPlayerActivity;
 import pojlib.account.MinecraftAccount;
 import pojlib.api.API_V1;
 import pojlib.install.*;
@@ -20,14 +19,14 @@ import pojlib.util.VLoader;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 public class MinecraftInstance {
 
@@ -78,25 +77,38 @@ public class MinecraftInstance {
 
         // Install minecraft
         VersionInfo finalModLoaderVersionInfo = modLoaderVersionInfo;
-        new Thread(() -> {
-            try {
-                String clientClasspath = Installer.installClient(minecraftVersionInfo, gameDir);
-                String minecraftClasspath = Installer.installLibraries(minecraftVersionInfo, gameDir);
-                String modLoaderClasspath = Installer.installLibraries(finalModLoaderVersionInfo, gameDir);
-                String lwjgl = Installer.installLwjgl(activity);
+        try {
+            CompletableFuture<String> clientClasspath = Installer.installClient(minecraftVersionInfo, gameDir);
+            CompletableFuture<String> minecraftClasspath = Installer.installLibraries(minecraftVersionInfo, gameDir);
+            CompletableFuture<String> modLoaderClasspath = Installer.installLibraries(finalModLoaderVersionInfo, gameDir);
+            CompletableFuture<String> lwjgl = Installer.installLwjgl(activity);
+            CompletableFuture<String> assetsDir = Installer.installAssets(minecraftVersionInfo, gameDir);
 
-                instance.classpath = clientClasspath + File.pathSeparator + minecraftClasspath + File.pathSeparator + modLoaderClasspath + File.pathSeparator + lwjgl;
+            CompletableFuture.allOf(clientClasspath, minecraftClasspath, modLoaderClasspath, lwjgl).whenComplete((ignored, exception) -> {
+                if (exception != null) throw new RuntimeException(exception);
+                try {
+                    instance.classpath = clientClasspath.get() + File.pathSeparator + minecraftClasspath.get() + File.pathSeparator + modLoaderClasspath.get() + File.pathSeparator + lwjgl.get();
+                } catch (ExecutionException | InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            assetsDir.whenComplete((s, e) -> {
+                if (e != null) instance.assetsDir = s;
+            });
 
-                instance.assetsDir = Installer.installAssets(minecraftVersionInfo, gameDir);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            instance.assetIndex = minecraftVersionInfo.assetIndex.id;
 
-            // Write instance to json file
-            GsonUtils.objectToJsonFile(gameDir + "/instances/" + instanceName + "/instance.json", instance);
-            API_V1.finishedDownloading = true;
-        }).start();
+            //when complete
+            CompletableFuture.allOf(clientClasspath, minecraftClasspath, modLoaderClasspath, lwjgl, assetsDir).whenComplete((ignored, exception) -> {
+                if (exception == null) API_V1.finishedDownloading = true; // This behavior would happen normally.
+            });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        instance.assetIndex = minecraftVersionInfo.assetIndex.id;
+
+        // Write instance to json file
+        GsonUtils.objectToJsonFile(gameDir + "/instances/" + instanceName + "/instance.json", instance);
+
         return instance;
     }
 
