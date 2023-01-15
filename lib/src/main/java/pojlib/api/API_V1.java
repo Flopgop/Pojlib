@@ -46,7 +46,7 @@ public class API_V1 {
     public static String msaMessage = "";
     private static boolean hasQueried = false;
     private static JsonObject initialResponse;
-    public static boolean finishedDownloading = false;
+    public static volatile boolean finishedDownloading = false; // hopefully this doesn't break anything on unity's side.
     public static double downloadStatus;
     public static String currentDownload;
     public static String profileImage;
@@ -135,9 +135,9 @@ public class API_V1 {
         return MinecraftAccount.logout(home);
     }
 
-    public static MinecraftAccount login(String client_id)
+    public static MinecraftAccount login(Activity context, String client_id)
     {
-        MinecraftAccount acc = MinecraftAccount.load(MinecraftInstance.context.getFilesDir() + "/accounts", client_id);
+        MinecraftAccount acc = MinecraftAccount.load(context.getFilesDir() + "/accounts", client_id);
         if(acc != null) {
             profileImage = MinecraftAccount.getSkinFaceUrl(acc);
             return acc;
@@ -193,7 +193,7 @@ public class API_V1 {
 
                 if(jsonObject2.get("access_token") != null) {
                     // Finally, log in
-                    acc = MinecraftAccount.login(MinecraftInstance.context.getFilesDir() + "/accounts", jsonObject2);
+                    acc = MinecraftAccount.login(context.getFilesDir() + "/accounts", jsonObject2);
                     profileImage = MinecraftAccount.getSkinFaceUrl(acc);
                     return acc;
                 }

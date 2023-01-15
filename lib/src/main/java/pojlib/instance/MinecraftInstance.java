@@ -31,7 +31,8 @@ import java.util.concurrent.ExecutionException;
 public class MinecraftInstance {
 
     public static final String MODS = "https://raw.githubusercontent.com/QuestCraftPlusPlus/Pojlib/QuestCraft/mods.json";
-    public static Activity context;
+    // REMOVED: MEMORY LEAK
+    //public static Activity context;
     public String versionName;
     public String versionType;
     public String classpath;
@@ -78,11 +79,13 @@ public class MinecraftInstance {
         // Install minecraft
         VersionInfo finalModLoaderVersionInfo = modLoaderVersionInfo;
         try {
+            System.out.println("------------ STARTING INSTALLATION PROCESS ------------");
+            System.out.println("If you see no \"Finished installing...\" logs, this is a bug!");
             CompletableFuture<String> clientClasspath = Installer.installClient(minecraftVersionInfo, gameDir);
             CompletableFuture<String> minecraftClasspath = Installer.installLibraries(minecraftVersionInfo, gameDir);
             CompletableFuture<String> modLoaderClasspath = Installer.installLibraries(finalModLoaderVersionInfo, gameDir);
             CompletableFuture<String> lwjgl = Installer.installLwjgl(activity);
-            CompletableFuture<String> assetsDir = Installer.installAssets(minecraftVersionInfo, gameDir);
+            CompletableFuture<String> assetsDir = Installer.installAssets(activity, minecraftVersionInfo, gameDir);
 
             CompletableFuture.allOf(clientClasspath, minecraftClasspath, modLoaderClasspath, lwjgl).whenComplete((ignored, exception) -> {
                 if (exception != null) throw new RuntimeException(exception);
@@ -93,14 +96,30 @@ public class MinecraftInstance {
                 }
             });
             assetsDir.whenComplete((s, e) -> {
-                if (e != null) instance.assetsDir = s;
+                if (e == null) instance.assetsDir = s;
+                else throw new RuntimeException(e);
             });
-
 
             //when complete
-            CompletableFuture.allOf(clientClasspath, minecraftClasspath, modLoaderClasspath, lwjgl, assetsDir).whenComplete((ignored, exception) -> {
-                if (exception == null) API_V1.finishedDownloading = true; // This behavior would happen normally.
-            });
+            Thread waitForCompletion = new Thread(() -> {
+                clientClasspath.join();
+                System.out.println("Finished installing the client.");
+                minecraftClasspath.join();
+                System.out.println("Finished installing minecraft libraries.");
+                modLoaderClasspath.join();
+                System.out.println("Finished installing modloader libraries.");
+                lwjgl.join();
+                System.out.println("Finished installing LWJGL.");
+                assetsDir.join();
+                System.out.println("Finished installing assets.");
+                System.out.println("Installation process complete!");
+                API_V1.finishedDownloading = true;
+            }, "Completion Thread");
+            waitForCompletion.start();
+
+//            CompletableFuture.allOf(clientClasspath, minecraftClasspath, modLoaderClasspath, lwjgl, assetsDir).whenComplete((ignored, exception) -> {
+//                API_V1.finishedDownloading = true;
+//            });
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -192,7 +211,7 @@ public class MinecraftInstance {
         try {
             updateOrDownloadsMods();
             JREUtils.redirectAndPrintJRELog();
-            VLoader.setAndroidInitInfo(context);
+            VLoader.setAndroidInitInfo(activity);
             VLoader.setEGLGlobal(JREUtils.getEGLContextPtr(), JREUtils.getEGLDisplayPtr(), JREUtils.getEGLConfigPtr());
             JREUtils.launchJavaVM(activity, generateLaunchArgs(account), versionName);
         } catch (Throwable e) {
